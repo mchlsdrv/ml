@@ -26,9 +26,19 @@ phi_vals = {  # alpha, beta, gamma ; depth  = alpha ** phi | width = betta ** ph
 
 
 class CNNBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, groups=1):  # if we set groups = 1 - it's a normal conv, if we set groups = in_channels - it becomes Depthwise conv
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, groups=1):
+        # if we set groups = 1 - it's a normal conv,
+        # if we set groups = in_channels - it becomes Depth-wise conv
         super().__init__()
-        self.cnn = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride, padding=padding, groups=groups, bias=False)
+        self.cnn = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            groups=groups,
+            bias=False
+        )
         self.batch_norm = nn.BatchNorm2d(out_channels)
         self.activation = nn.SiLU()  # SiLU <-> Swish
 
@@ -55,7 +65,8 @@ class SqueezeExcitation(nn.Module):
 
 
 class InvertedResidualBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, expand_ratio, reduction=4, survival_prob=0.8):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, expand_ratio, reduction=4,
+                 survival_prob=0.8):
         super().__init__()
         self.survival_prop = survival_prob
         self.use_residual = in_channels == out_channels and stride == 1
@@ -64,10 +75,17 @@ class InvertedResidualBlock(nn.Module):
         reduce_dim = int(in_channels / reduction)
 
         if self.expand:
-            self.expand_conv = CNNBlock(in_channels=in_channels, out_channels=hidden_dim, kernel_size=3, stride=1, padding=1)
+            self.expand_conv = CNNBlock(
+                in_channels=in_channels,
+                out_channels=hidden_dim,
+                kernel_size=3,
+                stride=1,
+                padding=1
+            )
 
         self.conv = nn.Sequential(
-            CNNBlock(in_channels=hidden_dim, out_channels=hidden_dim, kernel_size=kernel_size, stride=stride, padding=padding, groups=hidden_dim),
+            CNNBlock(in_channels=hidden_dim, out_channels=hidden_dim, kernel_size=kernel_size, stride=stride,
+                     padding=padding, groups=hidden_dim),
             SqueezeExcitation(in_channels=hidden_dim, reduced_dim=reduce_dim),
             nn.Conv2d(in_channels=hidden_dim, out_channels=out_channels, kernel_size=1, bias=False),
             nn.BatchNorm2d(out_channels)
@@ -82,7 +100,7 @@ class InvertedResidualBlock(nn.Module):
         if not self.training:
             return x
 
-        binary_tensor = torch.randn(x.shape[0], 1, 1, 1, device=x.device) < self.survival_prop
+        binary_tensor = torch.randn(x.shape[0], 1, 1, 1, device=x.device) > self.survival_prop
         return torch.div(x, self.survival_prop) * binary_tensor
 
     def forward(self, inputs):

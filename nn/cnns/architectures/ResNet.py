@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from ..utils.regularization import stochastic_depth
 
 
 class ResBlock(nn.Module):
@@ -9,9 +10,12 @@ class ResBlock(nn.Module):
         self.channel_expansion = 4
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1, padding=0)
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1)
+        self.conv2 = nn.Conv2d(
+            in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1)
         self.bn2 = nn.BatchNorm2d(out_channels)
-        self.conv3 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels * self.channel_expansion, kernel_size=1, stride=1, padding=0)
+        self.conv3 = nn.Conv2d(
+            in_channels=out_channels, out_channels=out_channels * self.channel_expansion,
+            kernel_size=1, stride=1, padding=0)
         self.bn3 = nn.BatchNorm2d(out_channels * self.channel_expansion)
         self.activation = nn.ELU()
         self.identity_downsample = identity_downsample
@@ -27,7 +31,7 @@ class ResBlock(nn.Module):
         x = self.activation(x)
         x = self.conv3(x)
         x = self.bn3(x)
-        x = self.activation(x)
+        # x = self.activation(x)
 
         if self.identity_downsample is not None:
             x_identity = self.identity_downsample(x_identity)
@@ -83,7 +87,9 @@ class ResNet(nn.Module):
                 nn.BatchNorm2d(out_channels * 4)
             )
 
-        layers.append(block(in_channels=self.in_channels, out_channels=out_channels, identity_downsample=identity_downsample, stride=stride))
+        layers.append(block(
+            in_channels=self.in_channels, out_channels=out_channels,
+            identity_downsample=identity_downsample, stride=stride))
         self.in_channels = out_channels * 4
 
         for i in range(num_residual_blocks - 1):
