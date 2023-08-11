@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from ..utils.regularization import stochastic_depth
+from ml.nn.utils.regularization import stochastic_depth
 
 
 class ResBlock(nn.Module):
