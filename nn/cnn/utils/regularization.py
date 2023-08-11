@@ -1,8 +1,5 @@
 import numpy as np
 import torch
-# import warnings
-
-# warnings.filterwarnings('ignore')
 
 def stochastic_depth(model, inputs, min_survival_prop=0.5) -> torch.tensor:
     """
