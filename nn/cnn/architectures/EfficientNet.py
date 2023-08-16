@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from math import ceil
 
+from ml.nn.utils.regularization import stochastic_depth, apply_stochastic_depth
 
 base_model = [
     [1, 16, 1, 1, 3],
@@ -91,25 +92,27 @@ class InvertedResidualBlock(nn.Module):
             nn.BatchNorm2d(out_channels)
         )
 
-    def stochastic_depth(self, x):
-        """
-        Randomly skips certain layers
-        :param x: Input Tensor
-        :return:
-        """
-        if not self.training:
-            return x
-
-        binary_tensor = torch.randn(x.shape[0], 1, 1, 1, device=x.device) > self.survival_prop
-        return torch.div(x, self.survival_prop) * binary_tensor
+    # def stochastic_depth(self, x):
+    #     """
+    #     Randomly skips certain layers
+    #     :param x: Input Tensor
+    #     :return:
+    #     """
+    #     if not self.training:
+    #         return x
+    #
+    #     binary_tensor = torch.randn(x.shape[0], 1, 1, 1, device=x.device) > self.survival_prop
+    #     return torch.div(x, self.survival_prop) * binary_tensor
 
     def forward(self, inputs):
         x = self.expand_conv(inputs) if self.expand else inputs
 
+        x = self.conv(x)
+
         if self.use_residual:
-            return self.stochastic_depth(self.conv(x)) + inputs
-        else:
-            return self.conv(x)
+            x = apply_stochastic_depth(x=x, inputs=inputs, survival_prop=self.survival_prop, training=self.training)
+
+        return x
 
 
 class EfficientNet(nn.Module):

@@ -1,3 +1,4 @@
+import argparse
 import os
 import numpy as np
 import pandas as pd
@@ -8,18 +9,49 @@ import matplotlib.pyplot as plt
 
 plt.style.use('ggplot')
 
+
+def get_arg_parser():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--name', type=str, help='The name of the experiment')
+    parser.add_argument('--debug', default=False, action='store_true', help=f'If the run is a debugging run')
+    parser.add_argument('--load_weights', default=False, action='store_true', help=f'If to load existing weights')
+    parser.add_argument('--train', default=False, action='store_true', help=f'If to train the model')
+    parser.add_argument('--gpu_id', type=int, default=-1, help='The ID of the GPU to run on')
+
+    # - GENERAL PARAMETERS
+    parser.add_argument('--project', type=str, help='The name of the project')
+
+    return parser
+
+
+def get_device(gpu_id: int = 0):
+    n_gpus = torch.cuda.device_count()
+
+    print(f'- Number of available GPUs: {n_gpus}\n')
+
+    device = torch.device('cpu')
+    if -1 < gpu_id < n_gpus:
+        device = torch.device(f'cuda:{gpu_id}')
+
+    print(f'- Running on {device}\n')
+
+    return device
+
+
 def save_checkpoint(model: torch.nn.Module, filename: pathlib.Path or str = 'my_checkpoint.pth.tar', epoch: int = 0):
     if epoch > 0:
-        print(f'\n=> Saving checkpoint for epoch {epoch}')
+        print(f'\n=> Saving checkpoint for epoch {epoch} to {filename}')
     else:
-        print(f'\n=> Saving checkpoint')
+        print(f'\n=> Saving checkpoint to {filename}')
 
     torch.save(model.state_dict(), filename)
 
 
-def load_checkpoint(model, checkpoint):
-    print('=> Loading checkpoint')
-    model.load_state_dict(checkpoint['state_dict'])
+def load_checkpoint(model, checkpoint: pathlib.Path):
+    print(f'- Loading checkpoint from {checkpoint}')
+    chkpt = torch.load(checkpoint)
+    model.load_state_dict(chkpt)
 
 
 def get_train_val_split(data_df: pd.DataFrame, val_prop: float = .2):

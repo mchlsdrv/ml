@@ -1,17 +1,13 @@
 import numpy as np
 import torch
 
-def stochastic_depth(model, inputs, min_survival_prop=0.5) -> torch.tensor:
+def stochastic_depth(inputs, min_survival_prop=0.5) -> torch.tensor:
     """
     Randomly skips certain layers
-    :param model: The training model
     :param inputs: Input Tensor
     :param min_survival_prop: The minimal probability that the layer will be dropped
     :return: outputs: The
     """
-    if not model.training:
-        return inputs
-
     dev = inputs.device
     btch_sz = inputs.shape[0]
 
@@ -29,3 +25,11 @@ def stochastic_depth(model, inputs, min_survival_prop=0.5) -> torch.tensor:
     outputs = torch.div(inputs, survival_prop_vector) * binary_tensor
 
     return outputs
+
+
+def apply_stochastic_depth(x, inputs, survival_prop: float = 0.5, training: bool = True):
+    if training:
+        x = stochastic_depth(x, min_survival_prop=survival_prop) + inputs
+    else:
+        x = x + inputs
+    return x

@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
-from ml.nn.utils.regularization import stochastic_depth
+from ml.nn.utils.regularization import stochastic_depth, apply_stochastic_depth
 
+STOCHASTIC_DEPTH = True
 
 class ResBlock(nn.Module):
     def __init__(self, in_channels, out_channels, identity_downsample=None, stride=1):
@@ -19,6 +20,7 @@ class ResBlock(nn.Module):
         self.bn3 = nn.BatchNorm2d(out_channels * self.channel_expansion)
         self.activation = nn.ELU()
         self.identity_downsample = identity_downsample
+        self.stochastic_depth = stochastic_depth
 
     def forward(self, x):
         x_identity = x
@@ -38,6 +40,9 @@ class ResBlock(nn.Module):
 
         x += x_identity
         x = self.activation(x)
+
+        if STOCHASTIC_DEPTH:
+            x = apply_stochastic_depth(x, x_identity, survival_prop=0.5, training=self.training)
 
         return x
 
@@ -131,6 +136,5 @@ def test_resnet152():
     print(y.shape)
 
 
-test_resnet50()
-test_resnet101()
-test_resnet152()
+if __name__ == '__main__':
+    pass
