@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from ml.nn.utils.regularization import stochastic_depth, apply_stochastic_depth
 
-STOCHASTIC_DEPTH = True
+STOCHASTIC_DEPTH = False
 
 class ResBlock(nn.Module):
     def __init__(self, in_channels, out_channels, identity_downsample=None, stride=1):
@@ -33,7 +33,6 @@ class ResBlock(nn.Module):
         x = self.activation(x)
         x = self.conv3(x)
         x = self.bn3(x)
-        # x = self.activation(x)
 
         if self.identity_downsample is not None:
             x_identity = self.identity_downsample(x_identity)
@@ -41,19 +40,20 @@ class ResBlock(nn.Module):
         x += x_identity
         x = self.activation(x)
 
-        if STOCHASTIC_DEPTH:
+        if self.training and STOCHASTIC_DEPTH:
             x = apply_stochastic_depth(x, x_identity, survival_prop=0.5, training=self.training)
 
         return x
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, layers, image_channels, num_classes):
+    def __init__(self, block, layers, image_channels, output_size, prediction_layer: torch.nn.modules.activation):
         super().__init__()
         self.in_channels = 64
         self.conv1 = nn.Conv2d(in_channels=image_channels, out_channels=64, kernel_size=7, stride=2, padding=3)
         self.bn1 = nn.BatchNorm2d(64)
         self.activation = nn.ELU()
+        self.logit_activation = nn.Sigmoid()
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         # ResNet layers
@@ -63,7 +63,8 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block=block, num_residual_blocks=layers[3], out_channels=512, stride=2)
 
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * 4, num_classes)
+        self.fc = nn.Linear(512 * 4, output_size)
+        self.pred_layer = prediction_layer
 
     def forward(self, x):
         x = self.conv1(x)
@@ -79,6 +80,12 @@ class ResNet(nn.Module):
         x = self.avgpool(x)
         x = x.reshape(x.shape[0], -1)
         x = self.fc(x)
+
+        # x = self.logit_activation(x)
+        # x = self.activation(x)
+
+        if self.pred_layer is not None:
+            x = self.pred_layer(x)
 
         return x
 
@@ -103,16 +110,19 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
 
-def get_resnet50(image_channels=3, num_classes=1000):
-    return ResNet(block=ResBlock, layers=[3, 4, 6, 3], image_channels=image_channels, num_classes=num_classes)
+def get_resnet50(image_channels=3, output_size=1000, prediction_layer=None):
+    return ResNet(block=ResBlock, layers=[3, 4, 6, 3], image_channels=image_channels, output_size=output_size,
+                  prediction_layer=prediction_layer)
 
 
-def get_resnet101(image_channels=3, num_classes=1000):
-    return ResNet(block=ResBlock, layers=[3, 4, 23, 3], image_channels=image_channels, num_classes=num_classes)
+def get_resnet101(image_channels=3, output_size=1000, prediction_layer=None):
+    return ResNet(block=ResBlock, layers=[3, 4, 23, 3], image_channels=image_channels, output_size=output_size,
+                  prediction_layer=prediction_layer)
 
 
-def get_resnet152(image_channels=3, num_classes=1000):
-    return ResNet(block=ResBlock, layers=[3, 8, 36, 3], image_channels=image_channels, num_classes=num_classes)
+def get_resnet152(image_channels=3, output_size=1000, prediction_layer=None):
+    return ResNet(block=ResBlock, layers=[3, 8, 36, 3], image_channels=image_channels, output_size=output_size,
+                  prediction_layer=prediction_layer)
 
 
 def test_resnet50():
