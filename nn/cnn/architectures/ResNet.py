@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from ml.nn.utils.regularization import stochastic_depth, apply_stochastic_depth
 
+# STOCHASTIC_DEPTH = True
 STOCHASTIC_DEPTH = False
 
 class ResBlock(nn.Module):

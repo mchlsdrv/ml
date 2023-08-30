@@ -1,5 +1,7 @@
 import argparse
 import os
+
+import cv2
 import numpy as np
 import pandas as pd
 import torch
@@ -14,12 +16,17 @@ plt.style.use('ggplot')
 def get_arg_parser():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--name', type=str, help='The name of the experiment')
+    parser.add_argument('--name', type=str, required=True, help='The name of the experiment')
     parser.add_argument('--debug', default=False, action='store_true', help=f'If the run is a debugging run')
+    parser.add_argument('--model_type', type=str, choices=['reg', 'bin'], required=True, help=f'''
+    - reg: Regression model with MSE loss
+    - bin: Binary classification model with Cross Entropy loss
+    ''')
     parser.add_argument('--load_weights', default=False, action='store_true', help=f'If to load existing weights')
     parser.add_argument('--train', default=False, action='store_true', help=f'If to train the model')
     parser.add_argument('--test', default=False, action='store_true', help=f'If to test the model')
-    parser.add_argument('--infer', default=False, action='store_true', help=f'If to infer images with the model')
+    parser.add_argument('--infer', default=False, action='store_true', help=f'If to infer the model')
+    parser.add_argument('--rgb', default=False, action='store_true', help=f'If to use the RGB images or in gray scale')
     parser.add_argument('--gpu_id', type=int, default=-1, help='The ID of the GPU to run on')
     parser.add_argument('--epochs', type=int, default=100, help='The number of epochs to train the network')
     parser.add_argument('--batch_size', type=int, default=32, help='The size of the train batch')
@@ -44,6 +51,10 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
     loss_plot_start_idx, loss_plot_end_idx = 0, LOSS_PLOT_RESOLUTION
     loss_plot_train_history = []
     loss_plot_val_history = []
+
+    # - Create checkpoint dir
+    checkpoint_dir = output_dir / 'checkpoints'
+    os.makedirs(checkpoint_dir, exist_ok=True)
 
     # - Training loop
     train_loss_np = 0.0
@@ -71,7 +82,7 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
             optimizer.step()
 
         # - Validation
-        model.eval()
+        # model.eval()
         val_loss_np = 0.0
         with torch.no_grad():
             for btch_idx, (imgs, lbls) in enumerate(val_data_loader):
@@ -83,12 +94,15 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
                 val_loss_np = loss.item()
                 btch_val_losses = np.append(btch_val_losses, val_loss_np)
 
-        model.train()
+        # model.train()
         epoch_train_losses = np.append(epoch_train_losses, btch_train_losses.mean())
         epoch_val_losses = np.append(epoch_val_losses, btch_val_losses.mean())
 
+        # - Save last checkpoint weights
+        save_checkpoint(model=model, filename=checkpoint_dir / f'weights_last_epoch.pth.tar', epoch=epch)
+
         if len(epoch_train_losses) >= loss_plot_end_idx and len(epoch_val_losses) >= loss_plot_end_idx:
-            epch_pbar.set_postfix(epoch=epch, train_loss=f'{train_loss_np:.3f}', val_loss=f'{val_loss_np:.3f}')
+            epch_pbar.set_postfix(epoch=epch+1, train_loss=f'{train_loss_np:.3f}', val_loss=f'{val_loss_np:.3f}')
             # - Add the mean history
             loss_plot_train_history.append(epoch_train_losses[loss_plot_start_idx:loss_plot_end_idx].mean())
             loss_plot_val_history.append(epoch_val_losses[loss_plot_start_idx:loss_plot_end_idx].mean())
@@ -111,7 +125,7 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
                 val_losses=loss_plot_val_history,
                 x_ticks=np.arange(1, (epch + 1) // LOSS_PLOT_RESOLUTION + 1) * LOSS_PLOT_RESOLUTION,
                 x_label='Epochs',
-                y_label='BCE',
+                y_label='Loss',
                 title='Train vs Validation Plot',
                 train_loss_marker='b-', val_loss_marker='r-',
                 train_loss_label='train', val_loss_label='val',
@@ -119,8 +133,6 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
             )
 
             # - Save model weights
-            checkpoint_dir = output_dir / 'checkpoints'
-            os.makedirs(checkpoint_dir, exist_ok=True)
             save_checkpoint(model=model, filename=checkpoint_dir / f'weights_epoch_{epch}.pth.tar', epoch=epch)
 
             loss_plot_start_idx += LOSS_PLOT_RESOLUTION
@@ -212,6 +224,32 @@ def get_x_ticks(epoch):
         x_ticks = np.arange(1, epoch, 500)
 
     return x_ticks
+
+
+def save_images(images: np.ndarray or list, image_names: list, save_dir: pathlib.Path or str,
+                squared_errors: np.ndarray = None):
+    assert isinstance(save_dir, str) or isinstance(save_dir, pathlib.Path), \
+        f'save_dir parameter must be of type str or pathlib.Path, but of type {type(save_dir)}'
+    if isinstance(save_dir, str):
+        save_dir = pathlib.Path(save_dir)
+    os.makedirs(save_dir, exist_ok=True)
+    if not isinstance(squared_errors, np.ndarray):
+        squared_errors = -1 * np.ones(len(images))
+    print(f'- Saving {len(images)} images to {save_dir}')
+    img_pbar = tqdm(zip(images, image_names, squared_errors))
+    for img, img_nm, sq_err in img_pbar:
+        print(f'Saving image {save_dir / img_nm}')
+        img_nm = img_nm if sq_err < 0 else f'{sq_err}_' + img_nm
+        cv2.imwrite(str(save_dir / f'{img_nm}'), img)
+
+
+def plot_scatter(true: list, predicted: list, labels: list):
+    fig, ax = plt.subplots()
+    for t, p, l in zip(true, predicted, labels):
+        ax.scatter(t, p, label=l)
+
+    plt.legend()
+    return fig
 
 
 def plot_loss(train_losses, val_losses, x_ticks: np.ndarray, x_label: str, y_label: str,
