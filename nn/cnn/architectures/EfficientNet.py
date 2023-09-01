@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from math import ceil
 
-from ml.nn.utils.regularization import stochastic_depth, apply_stochastic_depth
+from ml.nn.utils.regularization import apply_stochastic_depth
 
 base_model = [
     [1, 16, 1, 1, 3],
@@ -91,18 +91,6 @@ class InvertedResidualBlock(nn.Module):
             nn.Conv2d(in_channels=hidden_dim, out_channels=out_channels, kernel_size=1, bias=False),
             nn.BatchNorm2d(out_channels)
         )
-
-    # def stochastic_depth(self, x):
-    #     """
-    #     Randomly skips certain layers
-    #     :param x: Input Tensor
-    #     :return:
-    #     """
-    #     if not self.training:
-    #         return x
-    #
-    #     binary_tensor = torch.randn(x.shape[0], 1, 1, 1, device=x.device) > self.survival_prop
-    #     return torch.div(x, self.survival_prop) * binary_tensor
 
     def forward(self, inputs):
         x = self.expand_conv(inputs) if self.expand else inputs

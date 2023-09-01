@@ -57,7 +57,6 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
     os.makedirs(checkpoint_dir, exist_ok=True)
 
     # - Training loop
-    train_loss_np = 0.0
     epch_pbar = tqdm(range(epochs))
     for epch in epch_pbar:
         # - Train
@@ -83,7 +82,6 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
 
         # - Validation
         # model.eval()
-        val_loss_np = 0.0
         with torch.no_grad():
             for btch_idx, (imgs, lbls) in enumerate(val_data_loader):
                 imgs = imgs.to(device)
@@ -102,10 +100,12 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
         save_checkpoint(model=model, filename=checkpoint_dir / f'weights_last_epoch.pth.tar', epoch=epch)
 
         if len(epoch_train_losses) >= loss_plot_end_idx and len(epoch_val_losses) >= loss_plot_end_idx:
-            epch_pbar.set_postfix(epoch=epch+1, train_loss=f'{train_loss_np:.3f}', val_loss=f'{val_loss_np:.3f}')
+            train_loss_mean = epoch_train_losses[loss_plot_start_idx:loss_plot_end_idx].mean()
+            val_loss_mean = epoch_val_losses[loss_plot_start_idx:loss_plot_end_idx].mean()
+            epch_pbar.set_postfix(epoch=epch+1, train_loss=f'{train_loss_mean:.3f}', val_loss=f'{val_loss_mean:.3f}')
             # - Add the mean history
-            loss_plot_train_history.append(epoch_train_losses[loss_plot_start_idx:loss_plot_end_idx].mean())
-            loss_plot_val_history.append(epoch_val_losses[loss_plot_start_idx:loss_plot_end_idx].mean())
+            loss_plot_train_history.append(train_loss_mean)
+            loss_plot_val_history.append(val_loss_mean)
 
             # - Plot the mean history
             # - If the output_dir was not provided - save the outputs in a local dir
