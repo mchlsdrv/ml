@@ -1,17 +1,25 @@
 import torch
 import torch.nn as nn
-from torch.nn import Dropout2d
 
 from ml.nn.utils.regularization import stochastic_depth, apply_stochastic_depth
 
-# STOCHASTIC_DEPTH = True
-STOCHASTIC_DEPTH = False
+STOCHASTIC_DEPTH = True
+# STOCHASTIC_DEPTH = False
 
-# DROP_BLOCK = 0.1
-P_DROP_BLOCK = 0.0
+DROP_BLOCK_EPOCH_START = 50
+P_DROP_BLOCK = 0.1
+# P_DROP_BLOCK = 0.0
+P_DROP_BLOCK_FCTR = 1.1
+P_DROP_BLOCK_MAX = 0.5
 
+DROP_OUT_EPOCH_START = 0
 P_DROPOUT = 0.2
-# DROPOUT = 0.0
+# P_DROPOUT = 0.0
+P_DROPOUT_FCTR = 1.1
+P_DROPOUT_MAX = 0.5
+
+EPOCH = 0
+
 
 class ResBlock(nn.Module):
     def __init__(self, in_channels, out_channels, identity_downsample=None, stride=1):
@@ -30,7 +38,7 @@ class ResBlock(nn.Module):
         self.activation = nn.ELU()
         self.identity_downsample = identity_downsample
         self.stochastic_depth = stochastic_depth
-        self.db = Dropout2d(p=P_DROP_BLOCK)
+
 
     def forward(self, x):
         x_identity = x
@@ -45,9 +53,12 @@ class ResBlock(nn.Module):
 
         x = self.conv3(x)
         x = self.bn3(x)
+        x = self.activation(x)
 
-        if self.training and P_DROP_BLOCK > 0.0:
-            x = self.db(x)
+        if self.training and P_DROP_BLOCK > 0.0 and EPOCH > DROP_BLOCK_EPOCH_START:
+            p = P_DROP_BLOCK * P_DROP_BLOCK_FCTR
+            p = p if p < P_DROP_BLOCK_MAX else P_DROP_BLOCK_MAX
+            x = nn.Dropout2d(p=p)(x)
 
         if self.identity_downsample is not None:
             x_identity = self.identity_downsample(x_identity)
@@ -57,7 +68,7 @@ class ResBlock(nn.Module):
         if self.training and STOCHASTIC_DEPTH:
             x = apply_stochastic_depth(x, x_identity, survival_prop=0.5, training=self.training)
 
-        x = self.activation(x)
+        # x = self.activation(x)
 
         return x
 
@@ -71,6 +82,7 @@ class ResNet(nn.Module):
         self.activation = nn.ELU()
         self.logit_activation = nn.Sigmoid()
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.epoch = 0
 
         # ResNet layers
         self.layer1 = self._make_layer(block=block, num_residual_blocks=layers[0], out_channels=64, stride=1)
@@ -80,10 +92,13 @@ class ResNet(nn.Module):
 
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc = nn.Linear(512 * 4, output_size)
-        self.do = nn.Dropout(p=P_DROPOUT)
         self.pred_layer = prediction_layer
 
     def forward(self, x):
+        # - Update the epochs for scheduling
+        global EPOCH
+        EPOCH = self.epoch
+
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.activation(x)
@@ -98,11 +113,10 @@ class ResNet(nn.Module):
         x = x.reshape(x.shape[0], -1)
         x = self.fc(x)
 
-        if self.training and P_DROPOUT > 0:
-            x = self.do(x)
-
-        # x = self.logit_activation(x)
-        # x = self.activation(x)
+        if self.training and P_DROPOUT > 0 and EPOCH > DROP_BLOCK_EPOCH_START:
+            p = P_DROPOUT * P_DROPOUT_FCTR
+            p = p if p < P_DROPOUT_MAX else P_DROPOUT_MAX
+            x = nn.Dropout(p=p)(x)
 
         if self.pred_layer is not None:
             x = self.pred_layer(x)

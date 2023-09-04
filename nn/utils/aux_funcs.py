@@ -30,6 +30,8 @@ def get_arg_parser():
     parser.add_argument('--gpu_id', type=int, default=-1, help='The ID of the GPU to run on')
     parser.add_argument('--epochs', type=int, default=100, help='The number of epochs to train the network')
     parser.add_argument('--batch_size', type=int, default=32, help='The size of the train batch')
+    parser.add_argument('--n_samples', type=int, default=-1, help='Integer representing the number of samples to run the train on. -1 - all the data samples')
+    parser.add_argument('--out_size', type=int, choices=[1, 2], default=2, help='Integer representing the number neurons at the output')
     parser.add_argument('--n_channels', type=int, choices=[1, 3], default=3, help='1 - Gray scale, 3 - RGB')
     parser.add_argument('--output_size', type=int, choices=[1, 2], default=2, help='Number of output neurons')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='The learning rate value for the training')
@@ -59,6 +61,9 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
     # - Training loop
     epch_pbar = tqdm(range(epochs))
     for epch in epch_pbar:
+        # - Increase the epochs in the model
+        model.epoch = epch
+
         # - Train
         btch_train_losses = np.array([])
         btch_val_losses = np.array([])
@@ -133,7 +138,7 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
             )
 
             # - Save model weights
-            save_checkpoint(model=model, filename=checkpoint_dir / f'weights_epoch_{epch}.pth.tar', epoch=epch)
+            save_checkpoint(model=model, filename=checkpoint_dir / f'weights_epoch_{epch+1}.pth.tar', epoch=epch)
 
             loss_plot_start_idx += LOSS_PLOT_RESOLUTION
             loss_plot_end_idx += LOSS_PLOT_RESOLUTION
@@ -155,7 +160,7 @@ def get_device(gpu_id: int = 0):
     return device
 
 
-def save_checkpoint(model: torch.nn.Module, filename: pathlib.Path or str = 'my_checkpoint.pth.tar', epoch: int = 0):
+def save_checkpoint(model: torch.nn.Module, filename: pathlib.Path or str, epoch: int = 0):
     if epoch > 0:
         print(f'\n=> Saving checkpoint for epoch {epoch} to {filename}')
     else:
@@ -239,7 +244,7 @@ def save_images(images: np.ndarray or list, image_names: list, save_dir: pathlib
     img_pbar = tqdm(zip(images, image_names, squared_errors))
     for img, img_nm, sq_err in img_pbar:
         print(f'Saving image {save_dir / img_nm}')
-        img_nm = img_nm if sq_err < 0 else f'{sq_err}_' + img_nm
+        img_nm = img_nm if sq_err < 0 else f'{sq_err:.3f}_' + img_nm
         cv2.imwrite(str(save_dir / f'{img_nm}'), img)
 
 
@@ -255,7 +260,8 @@ def plot_scatter(true: list, predicted: list, labels: list):
 def plot_loss(train_losses, val_losses, x_ticks: np.ndarray, x_label: str, y_label: str,
               title='Train vs Validation Plot',
               train_loss_marker='bo-', val_loss_marker='r*-',
-              train_loss_label='train', val_loss_label='val', output_dir: pathlib.Path or str = './outputs'):
+              train_loss_label='train', val_loss_label='val',
+              output_dir: pathlib.Path or str = pathlib.Path('./outputs')):
     fig, ax = plt.subplots()
     ax.plot(x_ticks, train_losses, train_loss_marker, label=train_loss_label)
     ax.plot(x_ticks, val_losses, val_loss_marker, label=val_loss_label)
