@@ -12,6 +12,13 @@ from tqdm import tqdm
 
 plt.style.use('ggplot')
 
+LOSS_PLOT_RESOLUTION = 10
+
+# - Learning rate decay
+LEARNING_RATE_DECAY_FCTR = 0.9
+LEARNING_RATE_DECAY_PATIENCE = 10
+LEARNING_RATE_DECAY_SCHEDULE_EPOCH = 50
+LEARNING_RATE_MIN = 1e-6
 
 def get_arg_parser():
     parser = argparse.ArgumentParser()
@@ -42,13 +49,18 @@ def get_arg_parser():
     return parser
 
 
-LOSS_PLOT_RESOLUTION = 10
+def reduce_lr(optimizer: torch.optim):
+    cur_lr = optimizer.param_groups[0]['lr']
+    new_lr = cur_lr * LEARNING_RATE_DECAY_FCTR
+    print(f'- Reducing learning rate from {cur_lr:.7f} -> {new_lr:.7f}')
+    optimizer.param_groups[0]['lr'] = new_lr
+
 
 def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, loss_func,
           device: torch.device = torch.device('cpu'), output_dir: pathlib.Path = None):
     print(f'TRAINING MODEL ...')
-    epoch_train_losses = np.array([])
-    epoch_val_losses = np.array([])
+    mean_train_losses = np.array([])
+    mean_val_losses = np.array([])
 
     loss_plot_start_idx, loss_plot_end_idx = 0, LOSS_PLOT_RESOLUTION
     loss_plot_train_history = []
@@ -65,8 +77,17 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
         model.epoch = epch
 
         # - Train
+        # -- History
+        # ** train **
+        epch_train_preds = np.array([])
+        epch_train_lbls = np.array([])
         btch_train_losses = np.array([])
+
+        # ** val **
+        epch_val_preds = np.array([])
+        epch_val_lbls = np.array([])
         btch_val_losses = np.array([])
+
         for btch_idx, (imgs, lbls) in enumerate(train_data_loader):
             # - Store the data in CUDA
             imgs = imgs.to(device)
@@ -75,8 +96,6 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
             # - Forward
             preds = model(imgs).float()
             loss = loss_func(preds, lbls)
-            train_loss_np = loss.item()
-            btch_train_losses = np.append(btch_train_losses, train_loss_np)
 
             # - Backward
             optimizer.zero_grad()
@@ -85,8 +104,13 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
             # - Optimizer step
             optimizer.step()
 
+            # - Save train history
+            epch_train_lbls = np.append(epch_train_lbls, lbls.cpu().detach().numpy())
+            epch_train_preds = np.append(epch_train_preds, preds.cpu().detach().numpy())
+            btch_train_losses = np.append(btch_train_losses, loss.item())
+
+
         # - Validation
-        # model.eval()
         with torch.no_grad():
             for btch_idx, (imgs, lbls) in enumerate(val_data_loader):
                 imgs = imgs.to(device)
@@ -94,19 +118,33 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
 
                 preds = model(imgs)
                 loss = loss_func(preds, lbls)
-                val_loss_np = loss.item()
-                btch_val_losses = np.append(btch_val_losses, val_loss_np)
 
-        # model.train()
-        epoch_train_losses = np.append(epoch_train_losses, btch_train_losses.mean())
-        epoch_val_losses = np.append(epoch_val_losses, btch_val_losses.mean())
+                # - Save val history
+                epch_val_lbls = np.append(epch_val_lbls, lbls.cpu().detach().numpy())
+                epch_val_preds = np.append(epch_val_preds, preds.cpu().detach().numpy())
+                btch_val_losses = np.append(btch_val_losses, loss.item())
+
+        mean_train_losses = np.append(mean_train_losses, btch_train_losses.mean())
+        mean_val_losses = np.append(mean_val_losses, btch_val_losses.mean())
+
+        # - Learning rate decay scheduler
+        if (len(mean_train_losses) > LEARNING_RATE_DECAY_SCHEDULE_EPOCH) and \
+            (len(mean_train_losses) > LEARNING_RATE_DECAY_PATIENCE * 2 + 1) and \
+            (np.mean(mean_train_losses[:-LEARNING_RATE_DECAY_PATIENCE]) > np.mean(mean_train_losses[:-LEARNING_RATE_DECAY_PATIENCE * 2])):
+            cur_lr = optimizer.param_groups[0]['lr']
+            if cur_lr > LEARNING_RATE_MIN:
+                reduce_lr(optimizer=optimizer)
+            else:
+                print(f'(!) Current learning rate is {cur_lr:.7f}- can\'t reduce learning rate below {LEARNING_RATE_MIN:.7f}')
+
+
 
         # - Save last checkpoint weights
         save_checkpoint(model=model, filename=checkpoint_dir / f'weights_last_epoch.pth.tar', epoch=epch)
 
-        if len(epoch_train_losses) >= loss_plot_end_idx and len(epoch_val_losses) >= loss_plot_end_idx:
-            train_loss_mean = epoch_train_losses[loss_plot_start_idx:loss_plot_end_idx].mean()
-            val_loss_mean = epoch_val_losses[loss_plot_start_idx:loss_plot_end_idx].mean()
+        if len(mean_train_losses) >= loss_plot_end_idx and len(mean_val_losses) >= loss_plot_end_idx:
+            train_loss_mean = mean_train_losses[loss_plot_start_idx:loss_plot_end_idx].mean()
+            val_loss_mean = mean_val_losses[loss_plot_start_idx:loss_plot_end_idx].mean()
             epch_pbar.set_postfix(epoch=epch+1, train_loss=f'{train_loss_mean:.3f}', val_loss=f'{val_loss_mean:.3f}')
             # - Add the mean history
             loss_plot_train_history.append(train_loss_mean)
@@ -134,6 +172,13 @@ def train(model, train_data_loader, val_data_loader, epochs: int, optimizer, los
                 title='Train vs Validation Plot',
                 train_loss_marker='b-', val_loss_marker='r-',
                 train_loss_label='train', val_loss_label='val',
+                output_dir=output_dir
+            )
+
+            plot_scatter(
+                true=[epch_train_lbls, epch_val_lbls],
+                predicted=[epch_train_preds, epch_val_preds],
+                labels=['train - pd1', 'val - pd1'],
                 output_dir=output_dir
             )
 
@@ -203,6 +248,7 @@ def get_data_loaders_from_datasets(train_dataset: torch.utils.data.Dataset, trai
         batch_size=train_batch_size,
         num_workers=n_workers,
         pin_memory=pin_memory,
+        # prefetch_factor=4,
         shuffle=True
     )
 
@@ -211,6 +257,7 @@ def get_data_loaders_from_datasets(train_dataset: torch.utils.data.Dataset, trai
         batch_size=val_batch_size,
         num_workers=n_workers,
         pin_memory=pin_memory,
+        # prefetch_factor=4,
         shuffle=False
     )
 
@@ -248,13 +295,18 @@ def save_images(images: np.ndarray or list, image_names: list, save_dir: pathlib
         cv2.imwrite(str(save_dir / f'{img_nm}'), img)
 
 
-def plot_scatter(true: list, predicted: list, labels: list):
+def plot_scatter(true: list, predicted: list, labels: list, output_dir: pathlib.Path or str = pathlib.Path('./')):
     fig, ax = plt.subplots()
     for t, p, l in zip(true, predicted, labels):
         ax.scatter(t, p, label=l)
 
     plt.legend()
-    return fig
+
+    plot_output_dir = output_dir / 'plots'
+    os.makedirs(plot_output_dir, exist_ok=True)
+    print(f'\n=> Saving regression figure to {plot_output_dir}')
+    fig.savefig(plot_output_dir / 'scatter plot.png')
+    plt.close(fig)
 
 
 def plot_loss(train_losses, val_losses, x_ticks: np.ndarray, x_label: str, y_label: str,
