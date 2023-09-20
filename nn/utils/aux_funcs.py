@@ -15,9 +15,9 @@ plt.style.use('ggplot')
 LOSS_PLOT_RESOLUTION = 10
 
 # - Learning rate decay
-LEARNING_RATE_DECAY_FCTR = 0.9
-LEARNING_RATE_DECAY_PATIENCE = 10
-LEARNING_RATE_DECAY_SCHEDULE_EPOCH = 50
+LEARNING_RATE_DECAY_FCTR = 0.95
+LEARNING_RATE_DECAY_PATIENCE = 20
+LEARNING_RATE_DECAY_SCHEDULE_EPOCH = 150
 LEARNING_RATE_MIN = 1e-6
 
 def get_arg_parser():
@@ -39,7 +39,6 @@ def get_arg_parser():
     parser.add_argument('--batch_size', type=int, default=32, help='The size of the train batch')
     parser.add_argument('--n_samples', type=int, default=-1, help='Integer representing the number of samples to run the train on. -1 - all the data samples')
     parser.add_argument('--out_size', type=int, choices=[1, 2], default=2, help='Integer representing the number neurons at the output')
-    parser.add_argument('--n_channels', type=int, choices=[1, 3], default=3, help='1 - Gray scale, 3 - RGB')
     parser.add_argument('--output_size', type=int, choices=[1, 2], default=2, help='Number of output neurons')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='The learning rate value for the training')
 
